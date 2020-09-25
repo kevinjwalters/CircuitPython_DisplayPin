@@ -1,4 +1,4 @@
-### display_pin.py v0.12
+### display_pin.py v0.13
 ### A displayio object for showing the state and value of a pin
 
 ### Tested with an Adafruit CLUE and CircuitPython and 5.3.1
@@ -364,6 +364,7 @@ class DisplayPinDataPWM:
         self._cycle_scale_dob, _ = self._makeScale(tick_width, width, scale_height,
                                                    self._SCALE_COL_IDX)
         self._cycle_scale_dob.y = height - scale_height
+        self._cycle_scale_x_pos = self._waveXPos(value)
 
         self._group = displayio.Group(max_size=2)
         self._group.append(self._cycle_scale_dob)
@@ -374,7 +375,23 @@ class DisplayPinDataPWM:
             self.value = value
 
 
-    def _redrawCycle(self, value):
+    def _waveXPos(self, value):
+        """Calculate the x position based on value of the the negative edge of the
+           cycle. None returns None and 0 and full scale for CP mode returns "high",
+           other values return an x position
+           between 0 and furthest right pixel column."""
+        if value is None:
+            return None
+        elif value == 0:
+            return "low"
+        elif self._value_range >= 65536 and value == self._value_range - 1:
+            ### Special case for CircuitPython which treats 65535 as 100% d/c
+            return "high"
+        else:
+            return int((self._line_scfactor + 1) * value / self._value_range)
+
+
+    def _redrawWave(self, value):
         """Draw one cycle of the square wave to show the duty cycle of the
            pulse-width modulation output.
            Special values are 0 for low output and
@@ -382,26 +399,25 @@ class DisplayPinDataPWM:
            """
         ##tg_bmp = self._group.pop()  ### Prevent redraw during modification
 
+        ### Calculate new x position and proceed no further if already there
+        negedge_x = self._waveXPos(value)
+        if negedge_x == self._cycle_scale_x_pos:
+            return
+        else:
+            self._cycle_scale_x_pos = negedge_x
+
         bmp = self._cycle_wave_bitmap
         bmp.fill(0)  ### clear it
 
         if value is None:
             return
 
-        ### TODO - could store the x position of falling edge to prevent a redraw
-        ### if value has changed but x position has not - maybe use -Inf and Inf to 0 and 1?
-
-        if value == 0:
+        if negedge_x in ("low", "high"):
+            y_level = 0 if negedge_x == "high" else self._cycle_wave_height - 1
             for x_pos in range(self._cycle_wave_width):
-                bmp[x_pos, self._cycle_wave_height - 1] = self._LINE_COL_IDX
-
-        elif self._value_range >= 65536 and value == self._value_range - 1:
-            ### Special case for CircuitPython which treats 65535 as 100% d/c
-            for x_pos in range(self._cycle_wave_width):
-                bmp[x_pos, 0] = self._LINE_COL_IDX
+                bmp[x_pos, y_level] = self._LINE_COL_IDX
 
         else:
-            negedge_x = int((self._line_scfactor + 1) * value / self._value_range)
             top_y = 0
 
             for y_pos in range(top_y, self._cycle_wave_height):
@@ -410,14 +426,16 @@ class DisplayPinDataPWM:
             for x_pos in range(1, negedge_x):
                 bmp[x_pos, top_y] = self._LINE_COL_IDX  ### top across
 
-            for y_pos in range(top_y, self._cycle_wave_height):
-                bmp[negedge_x, y_pos] = self._LINE_COL_IDX  ### down
+            if negedge_x != 0:  ### rising edge covers x==0
+                for y_pos in range(top_y, self._cycle_wave_height):
+                    bmp[negedge_x, y_pos] = self._LINE_COL_IDX  ### down
 
             ### bottom across
             for x_pos in range(negedge_x + 1, self._cycle_wave_width):
                 bmp[x_pos, self._cycle_wave_height - 1] = self._LINE_COL_IDX
 
         ##self._group.append(tg_bmp)  ### Restore the TileGrid holding bitmap
+
 
     @property
     def value(self):
@@ -435,7 +453,7 @@ class DisplayPinDataPWM:
             c_value = value
         if self._value != c_value:
             self._value = c_value
-            self._redrawCycle(c_value)
+            self._redrawWave(c_value)
 
 
     @property
