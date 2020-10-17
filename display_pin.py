@@ -1,4 +1,4 @@
-### display_pin.py v0.13
+### display_pin.py v0.14
 ### A displayio object for showing the state and value of a pin
 
 ### Tested with an Adafruit CLUE and CircuitPython and 5.3.1
@@ -72,7 +72,7 @@ class DisplayPin:
         elif self._units == "MP":
             value_range = 1024
         else:
-            ValueError("Unbelievable carelessness $USER: units must be CP or MP")
+            raise ValueError("Unbelievable carelessness $USER: units must be CP or MP")
 
         self._dio_font = font
         font_bb = self._dio_font.get_bounding_box()
